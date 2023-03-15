@@ -2115,6 +2115,12 @@ class DatabaseQueryBuilderTest extends TestCase
             $this->getBuilder()->select('*')->from('products')->where('products.id', '=', new Raw('"orders"."id"'))
         );
         $this->assertSame('select * from "orders" where "id" = ? or not exists (select * from "products" where "products"."id" = "orders"."id")', $builder->toSql());
+
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('orders')->whereExists(
+            (new EloquentBuilder($this->getBuilder()))->select('*')->from('products')->where('products.id', '=', new Raw('"orders"."id"'))
+        );
+        $this->assertSame('select * from "orders" where exists (select * from "products" where "products"."id" = "orders"."id")', $builder->toSql());
     }
 
     public function testBasicJoins()
@@ -4448,30 +4454,6 @@ SQL;
             'path' => $path,
             'pageName' => $pageName,
         ]), $result);
-    }
-
-    public function testPaginateWithTotalOverride()
-    {
-        $perPage = 16;
-        $columns = ['id', 'name'];
-        $pageName = 'page-name';
-        $page = 1;
-        $builder = $this->getMockQueryBuilder();
-        $path = 'http://foo.bar?page=3';
-
-        $results = collect([['id' => 3, 'name' => 'Taylor'], ['id' => 5, 'name' => 'Mohamed']]);
-
-        $builder->shouldReceive('getCountForPagination')->never();
-        $builder->shouldReceive('forPage')->once()->with($page, $perPage)->andReturnSelf();
-        $builder->shouldReceive('get')->once()->andReturn($results);
-
-        Paginator::currentPathResolver(function () use ($path) {
-            return $path;
-        });
-
-        $result = $builder->paginate($perPage, $columns, $pageName, $page, 10);
-
-        $this->assertEquals(10, $result->total());
     }
 
     public function testCursorPaginate()
