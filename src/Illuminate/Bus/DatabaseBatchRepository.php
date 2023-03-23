@@ -6,6 +6,7 @@ use Carbon\CarbonImmutable;
 use Closure;
 use DateTimeInterface;
 use Illuminate\Database\Connection;
+use Illuminate\Database\Eloquent\ModelNotFoundException;
 use Illuminate\Database\PostgresConnection;
 use Illuminate\Database\Query\Expression;
 use Illuminate\Support\Str;
@@ -339,7 +340,11 @@ class DatabaseBatchRepository implements PrunableBatchRepository
             $serialized = base64_decode($serialized);
         }
 
-        return unserialize($serialized);
+        try {
+            return unserialize($serialized);
+        } catch (ModelNotFoundException $e) {
+            return [];
+        }
     }
 
     /**
