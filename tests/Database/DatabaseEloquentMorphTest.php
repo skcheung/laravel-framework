@@ -227,6 +227,10 @@ class DatabaseEloquentMorphTest extends TestCase
             new UniqueConstraintViolationException('mysql', 'example mysql', [], new Exception('SQLSTATE[23000]: Integrity constraint violation: 1062')),
         );
 
+        $relation->getQuery()->shouldReceive('withSavepointIfNeeded')->once()->andReturnUsing(function ($scope) {
+            return $scope();
+        });
+        $relation->getQuery()->shouldReceive('useWritePdo')->once()->andReturn($relation->getQuery());
         $relation->getQuery()->shouldReceive('where')->once()->with(['foo'])->andReturn($relation->getQuery());
         $relation->getQuery()->shouldReceive('first')->once()->with()->andReturn($model = m::mock(Model::class));
 
@@ -244,6 +248,10 @@ class DatabaseEloquentMorphTest extends TestCase
             new UniqueConstraintViolationException('mysql', 'example mysql', [], new Exception('SQLSTATE[23000]: Integrity constraint violation: 1062')),
         );
 
+        $relation->getQuery()->shouldReceive('withSavepointIfNeeded')->once()->andReturnUsing(function ($scope) {
+            return $scope();
+        });
+        $relation->getQuery()->shouldReceive('useWritePdo')->once()->andReturn($relation->getQuery());
         $relation->getQuery()->shouldReceive('where')->once()->with(['foo' => 'bar'])->andReturn($relation->getQuery());
         $relation->getQuery()->shouldReceive('first')->once()->with()->andReturn($model = m::mock(Model::class));
 
@@ -259,6 +267,9 @@ class DatabaseEloquentMorphTest extends TestCase
         $model->shouldReceive('setAttribute')->once()->with('morph_type', get_class($relation->getParent()));
         $model->shouldReceive('save')->once()->andReturn(true);
 
+        $relation->getQuery()->shouldReceive('withSavepointIfNeeded')->once()->andReturnUsing(function ($scope) {
+            return $scope();
+        });
         $relation->getQuery()->shouldReceive('where')->never();
         $relation->getQuery()->shouldReceive('first')->never();
 
@@ -274,6 +285,9 @@ class DatabaseEloquentMorphTest extends TestCase
         $model->shouldReceive('setAttribute')->once()->with('morph_type', get_class($relation->getParent()));
         $model->shouldReceive('save')->once()->andReturn(true);
 
+        $relation->getQuery()->shouldReceive('withSavepointIfNeeded')->once()->andReturnUsing(function ($scope) {
+            return $scope();
+        });
         $relation->getQuery()->shouldReceive('where')->never();
         $relation->getQuery()->shouldReceive('first')->never();
 
