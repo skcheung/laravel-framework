@@ -19,12 +19,14 @@ use InvalidArgumentException;
 use IteratorAggregate;
 use JsonSerializable;
 use Mockery as m;
+use PHPUnit\Framework\Attributes\DataProvider;
 use PHPUnit\Framework\TestCase;
 use ReflectionClass;
 use stdClass;
 use Symfony\Component\VarDumper\VarDumper;
 use Traversable;
 use UnexpectedValueException;
+use WeakMap;
 
 include_once 'Enums.php';
 
@@ -2029,9 +2031,9 @@ class SupportCollectionTest extends TestCase
         $this->assertEquals([['name' => 'dayle'], ['name' => 'taylor']], array_values($data->all()));
 
         $data = new $collection([['name' => 'taylor'], ['name' => 'dayle']]);
-        $data = $data->sortBy('name', SORT_STRING);
+        $data = $data->sortBy('name', SORT_STRING, true);
 
-        $this->assertEquals([['name' => 'dayle'], ['name' => 'taylor']], array_values($data->all()));
+        $this->assertEquals([['name' => 'taylor'], ['name' => 'dayle']], array_values($data->all()));
     }
 
     /**
@@ -2043,6 +2045,21 @@ class SupportCollectionTest extends TestCase
         $data = $data->sortBy([['sort', 'asc']]);
 
         $this->assertEquals([['sort' => 1], ['sort' => 2]], array_values($data->all()));
+    }
+
+    #[DataProvider('collectionClassProvider')]
+    public function testSortByCallableStringDesc($collection)
+    {
+        $data = new $collection([['id' => 1, 'name' => 'foo'], ['id' => 2, 'name' => 'bar']]);
+        $data = $data->sortByDesc(['id']);
+        $this->assertEquals([['id' => 2, 'name' => 'bar'], ['id' => 1, 'name' => 'foo']], array_values($data->all()));
+
+        $data = new $collection([['id' => 1, 'name' => 'foo'], ['id' => 2, 'name' => 'bar'], ['id' => 2, 'name' => 'baz']]);
+        $data = $data->sortByDesc(['id']);
+        $this->assertEquals([['id' => 2, 'name' => 'bar'], ['id' => 2, 'name' => 'baz'], ['id' => 1, 'name' => 'foo']], array_values($data->all()));
+
+        $data = $data->sortByDesc(['id', 'name']);
+        $this->assertEquals([['id' => 2, 'name' => 'baz'], ['id' => 2, 'name' => 'bar'], ['id' => 1, 'name' => 'foo']], array_values($data->all()));
     }
 
     /**
@@ -2073,6 +2090,88 @@ class SupportCollectionTest extends TestCase
         $data = $data->sortBy([['sort', 'asc']]);
 
         $this->assertEquals([1 => ['sort' => 1], 0 => ['sort' => 2]], $data->all());
+    }
+
+    #[DataProvider('collectionClassProvider')]
+    public function testSortByMany($collection)
+    {
+        $data = new $collection([['item' => '1'], ['item' => '10'], ['item' => 5], ['item' => 20]]);
+        $expected = $data->pluck('item')->toArray();
+
+        sort($expected);
+        $data = $data->sortBy(['item']);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        rsort($expected);
+        $data = $data->sortBy([['item', 'desc']]);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        sort($expected, SORT_STRING);
+        $data = $data->sortBy(['item'], SORT_STRING);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        rsort($expected, SORT_STRING);
+        $data = $data->sortBy([['item', 'desc']], SORT_STRING);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        sort($expected, SORT_NUMERIC);
+        $data = $data->sortBy(['item'], SORT_NUMERIC);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        rsort($expected, SORT_NUMERIC);
+        $data = $data->sortBy([['item', 'desc']], SORT_NUMERIC);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        $data = new $collection([['item' => 'img1'], ['item' => 'img101'], ['item' => 'img10'], ['item' => 'img11']]);
+        $expected = $data->pluck('item')->toArray();
+
+        sort($expected, SORT_NUMERIC);
+        $data = $data->sortBy(['item'], SORT_NUMERIC);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        sort($expected);
+        $data = $data->sortBy(['item']);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        sort($expected, SORT_NATURAL);
+        $data = $data->sortBy(['item'], SORT_NATURAL);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        $data = new $collection([['item' => 'img1'], ['item' => 'Img101'], ['item' => 'img10'], ['item' => 'Img11']]);
+        $expected = $data->pluck('item')->toArray();
+
+        sort($expected);
+        $data = $data->sortBy(['item']);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        sort($expected, SORT_NATURAL | SORT_FLAG_CASE);
+        $data = $data->sortBy(['item'], SORT_NATURAL | SORT_FLAG_CASE);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        sort($expected, SORT_FLAG_CASE | SORT_STRING);
+        $data = $data->sortBy(['item'], SORT_FLAG_CASE | SORT_STRING);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        sort($expected, SORT_FLAG_CASE | SORT_NUMERIC);
+        $data = $data->sortBy(['item'], SORT_FLAG_CASE | SORT_NUMERIC);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        $data = new $collection([['item' => 'Österreich'], ['item' => 'Oesterreich'], ['item' => 'Zeta']]);
+        $expected = $data->pluck('item')->toArray();
+
+        sort($expected);
+        $data = $data->sortBy(['item']);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        sort($expected, SORT_LOCALE_STRING);
+        $data = $data->sortBy(['item'], SORT_LOCALE_STRING);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
+
+        setlocale(LC_ALL, 'de_DE');
+
+        sort($expected, SORT_LOCALE_STRING);
+        $data = $data->sortBy(['item'], SORT_LOCALE_STRING);
+        $this->assertEquals($data->pluck('item')->toArray(), $expected);
     }
 
     /**
@@ -2333,7 +2432,7 @@ class SupportCollectionTest extends TestCase
      */
     public function testPluckDuplicateKeysExist($collection)
     {
-        $data = new collection([
+        $data = new $collection([
             ['brand' => 'Tesla', 'color' => 'red'],
             ['brand' => 'Pagani', 'color' => 'white'],
             ['brand' => 'Tesla', 'color' => 'black'],
@@ -2955,6 +3054,19 @@ class SupportCollectionTest extends TestCase
         $object->foo = 'bar';
         $data = new $collection($object);
         $this->assertEquals(['foo' => 'bar'], $data->all());
+    }
+
+    #[DataProvider('collectionClassProvider')]
+    public function testConstructMethodFromWeakMap($collection)
+    {
+        $this->expectException('InvalidArgumentException');
+
+        $map = new WeakMap();
+        $object = new stdClass;
+        $object->foo = 'bar';
+        $map[$object] = 3;
+
+        $data = new $collection($map);
     }
 
     public function testSplice()
@@ -4211,6 +4323,99 @@ class SupportCollectionTest extends TestCase
         $this->assertEquals(['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'], $data->only(['first', 'email'])->all());
         $this->assertEquals(['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'], $data->only('first', 'email')->all());
         $this->assertEquals(['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'], $data->only(collect(['first', 'email']))->all());
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testSelectWithArrays($collection)
+    {
+        $data = new $collection([
+            ['first' => 'Taylor', 'last' => 'Otwell', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'last' => 'Archer', 'email' => 'jessarcher@gmail.com'],
+        ]);
+
+        $this->assertEquals($data->all(), $data->select(null)->all());
+        $this->assertEquals([['first' => 'Taylor'], ['first' => 'Jess']], $data->select(['first', 'missing'])->all());
+        $this->assertEquals([['first' => 'Taylor'], ['first' => 'Jess']], $data->select('first', 'missing')->all());
+        $this->assertEquals([['first' => 'Taylor'], ['first' => 'Jess']], $data->select(collect(['first', 'missing']))->all());
+
+        $this->assertEquals([
+            ['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'email' => 'jessarcher@gmail.com'],
+        ], $data->select(['first', 'email'])->all());
+
+        $this->assertEquals([
+            ['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'email' => 'jessarcher@gmail.com'],
+        ], $data->select('first', 'email')->all());
+
+        $this->assertEquals([
+            ['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'email' => 'jessarcher@gmail.com'],
+        ], $data->select(collect(['first', 'email']))->all());
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testSelectWithArrayAccess($collection)
+    {
+        $data = new $collection([
+            new TestArrayAccessImplementation(['first' => 'Taylor', 'last' => 'Otwell', 'email' => 'taylorotwell@gmail.com']),
+            new TestArrayAccessImplementation(['first' => 'Jess', 'last' => 'Archer', 'email' => 'jessarcher@gmail.com']),
+        ]);
+
+        $this->assertEquals($data->all(), $data->select(null)->all());
+        $this->assertEquals([['first' => 'Taylor'], ['first' => 'Jess']], $data->select(['first', 'missing'])->all());
+        $this->assertEquals([['first' => 'Taylor'], ['first' => 'Jess']], $data->select('first', 'missing')->all());
+        $this->assertEquals([['first' => 'Taylor'], ['first' => 'Jess']], $data->select(collect(['first', 'missing']))->all());
+
+        $this->assertEquals([
+            ['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'email' => 'jessarcher@gmail.com'],
+        ], $data->select(['first', 'email'])->all());
+
+        $this->assertEquals([
+            ['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'email' => 'jessarcher@gmail.com'],
+        ], $data->select('first', 'email')->all());
+
+        $this->assertEquals([
+            ['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'email' => 'jessarcher@gmail.com'],
+        ], $data->select(collect(['first', 'email']))->all());
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testSelectWithObjects($collection)
+    {
+        $data = new $collection([
+            (object) ['first' => 'Taylor', 'last' => 'Otwell', 'email' => 'taylorotwell@gmail.com'],
+            (object) ['first' => 'Jess', 'last' => 'Archer', 'email' => 'jessarcher@gmail.com'],
+        ]);
+
+        $this->assertEquals($data->all(), $data->select(null)->all());
+        $this->assertEquals([['first' => 'Taylor'], ['first' => 'Jess']], $data->select(['first', 'missing'])->all());
+        $this->assertEquals([['first' => 'Taylor'], ['first' => 'Jess']], $data->select('first', 'missing')->all());
+        $this->assertEquals([['first' => 'Taylor'], ['first' => 'Jess']], $data->select(collect(['first', 'missing']))->all());
+
+        $this->assertEquals([
+            ['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'email' => 'jessarcher@gmail.com'],
+        ], $data->select(['first', 'email'])->all());
+
+        $this->assertEquals([
+            ['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'email' => 'jessarcher@gmail.com'],
+        ], $data->select('first', 'email')->all());
+
+        $this->assertEquals([
+            ['first' => 'Taylor', 'email' => 'taylorotwell@gmail.com'],
+            ['first' => 'Jess', 'email' => 'jessarcher@gmail.com'],
+        ], $data->select(collect(['first', 'email']))->all());
     }
 
     /**
@@ -5630,6 +5835,19 @@ class SupportCollectionTest extends TestCase
         $data = $collection::make([new \Error, new \Error, new $collection]);
         $this->expectException(UnexpectedValueException::class);
         $data->ensure(\Throwable::class);
+    }
+
+    /**
+     * @dataProvider collectionClassProvider
+     */
+    public function testEnsureForMultipleTypes($collection)
+    {
+        $data = $collection::make([new \Error, 123]);
+        $data->ensure([\Throwable::class, 'int']);
+
+        $data = $collection::make([new \Error, new \Error, new $collection]);
+        $this->expectException(UnexpectedValueException::class);
+        $data->ensure([\Throwable::class, 'int']);
     }
 
     /**

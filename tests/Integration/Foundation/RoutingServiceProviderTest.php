@@ -26,6 +26,42 @@ class RoutingServiceProviderTest extends TestCase
         ]);
     }
 
+    public function testItWorksNormallyWithoutMergeDataMiddlewareWithEmptyRequests()
+    {
+        Route::get('test-route', function (ServerRequestInterface $request) {
+            return $request->getParsedBody();
+        });
+
+        $response = $this->withoutExceptionHandling()->get('test-route', [
+            'content-type' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $response->assertExactJson([]);
+    }
+
+    public function testItIncludesMergedDataInServerRequestInterfaceInstancesUsingGetJsonRequestsWithContentTypeHeader()
+    {
+        Route::get('test-route', function (ServerRequestInterface $request) {
+            return $request->getParsedBody();
+        })->middleware(MergeDataMiddleware::class);
+
+        $response = $this->getJson('test-route?'.http_build_query([
+            'sent' => 'sent-data',
+            'overridden' => 'overriden-sent-data',
+        ]), [
+            'content-type' => 'application/json',
+        ]);
+
+        $response->assertOk();
+        $response->assertExactJson([
+            'json-data' => 'json-data',
+            'merged' => 'replaced-merged-data',
+            'overridden' => 'overriden-merged-data',
+            'request-data' => 'request-data',
+        ]);
+    }
+
     public function testItIncludesMergedDataInServerRequestInterfaceInstancesUsingGetJsonRequests()
     {
         Route::get('test-route', function (ServerRequestInterface $request) {
@@ -85,6 +121,18 @@ class RoutingServiceProviderTest extends TestCase
             'overridden' => 'overriden-merged-data',
             'request-data' => 'request-data',
         ]);
+    }
+
+    public function testItHandlesGzippedBodyPayloadsWhenCreatingServerRequestInterfaceInstances()
+    {
+        Route::post('test-route', function (ServerRequestInterface $request) {
+            return gzdecode((string) $request->getBody());
+        });
+
+        $response = $this->call('POST', 'test-route', content: file_get_contents(__DIR__.'/Fixtures/laravel.txt.gz'));
+
+        $response->assertOk();
+        $response->assertContent("Laravel\n");
     }
 }
 

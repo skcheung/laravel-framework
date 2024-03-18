@@ -1185,6 +1185,68 @@ class DatabaseQueryBuilderTest extends TestCase
         $this->assertEquals(['Car Plane'], $builder->getBindings());
     }
 
+    public function testWhereAll()
+    {
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->whereAll(['last_name', 'email'], '%Otwell%');
+        $this->assertSame('select * from "users" where ("last_name" = ? and "email" = ?)', $builder->toSql());
+        $this->assertEquals(['%Otwell%', '%Otwell%'], $builder->getBindings());
+
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->whereAll(['last_name', 'email'], 'not like', '%Otwell%');
+        $this->assertSame('select * from "users" where ("last_name" not like ? and "email" not like ?)', $builder->toSql());
+        $this->assertEquals(['%Otwell%', '%Otwell%'], $builder->getBindings());
+    }
+
+    public function testOrWhereAll()
+    {
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->where('first_name', 'like', '%Taylor%')->orWhereAll(['last_name', 'email'], 'like', '%Otwell%');
+        $this->assertSame('select * from "users" where "first_name" like ? or ("last_name" like ? and "email" like ?)', $builder->toSql());
+        $this->assertEquals(['%Taylor%', '%Otwell%', '%Otwell%'], $builder->getBindings());
+
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->where('first_name', 'like', '%Taylor%')->whereAll(['last_name', 'email'], 'like', '%Otwell%', 'or');
+        $this->assertSame('select * from "users" where "first_name" like ? or ("last_name" like ? and "email" like ?)', $builder->toSql());
+        $this->assertEquals(['%Taylor%', '%Otwell%', '%Otwell%'], $builder->getBindings());
+
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->where('first_name', 'like', '%Taylor%')->orWhereAll(['last_name', 'email'], '%Otwell%');
+        $this->assertSame('select * from "users" where "first_name" like ? or ("last_name" = ? and "email" = ?)', $builder->toSql());
+        $this->assertEquals(['%Taylor%', '%Otwell%', '%Otwell%'], $builder->getBindings());
+    }
+
+    public function testWhereAny()
+    {
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->whereAny(['last_name', 'email'], 'like', '%Otwell%');
+        $this->assertSame('select * from "users" where ("last_name" like ? or "email" like ?)', $builder->toSql());
+        $this->assertEquals(['%Otwell%', '%Otwell%'], $builder->getBindings());
+
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->whereAny(['last_name', 'email'], '%Otwell%');
+        $this->assertSame('select * from "users" where ("last_name" = ? or "email" = ?)', $builder->toSql());
+        $this->assertEquals(['%Otwell%', '%Otwell%'], $builder->getBindings());
+    }
+
+    public function testOrWhereAny()
+    {
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->where('first_name', 'like', '%Taylor%')->orWhereAny(['last_name', 'email'], 'like', '%Otwell%');
+        $this->assertSame('select * from "users" where "first_name" like ? or ("last_name" like ? or "email" like ?)', $builder->toSql());
+        $this->assertEquals(['%Taylor%', '%Otwell%', '%Otwell%'], $builder->getBindings());
+
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->where('first_name', 'like', '%Taylor%')->whereAny(['last_name', 'email'], 'like', '%Otwell%', 'or');
+        $this->assertSame('select * from "users" where "first_name" like ? or ("last_name" like ? or "email" like ?)', $builder->toSql());
+        $this->assertEquals(['%Taylor%', '%Otwell%', '%Otwell%'], $builder->getBindings());
+
+        $builder = $this->getBuilder();
+        $builder->select('*')->from('users')->where('first_name', 'like', '%Taylor%')->orWhereAny(['last_name', 'email'], '%Otwell%');
+        $this->assertSame('select * from "users" where "first_name" like ? or ("last_name" = ? or "email" = ?)', $builder->toSql());
+        $this->assertEquals(['%Taylor%', '%Otwell%', '%Otwell%'], $builder->getBindings());
+    }
+
     public function testUnions()
     {
         $builder = $this->getBuilder();
@@ -2526,6 +2588,117 @@ class DatabaseQueryBuilderTest extends TestCase
         $builder->from('users')->rightJoinSub(['foo'], 'sub', 'users.id', '=', 'sub.id');
     }
 
+    public function testJoinLateral()
+    {
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral('select * from `contacts` where `contracts`.`user_id` = `users`.`id`', 'sub');
+        $this->assertSame('select * from `users` inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `sub` on true', $builder->toSql());
+
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub');
+        $this->assertSame('select * from `users` inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `sub` on true', $builder->toSql());
+
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $sub = $this->getMySqlBuilder();
+        $sub->getConnection()->shouldReceive('getDatabaseName');
+        $eloquentBuilder = new EloquentBuilder($sub->from('contacts')->whereColumn('contracts.user_id', 'users.id'));
+        $builder->from('users')->joinLateral($eloquentBuilder, 'sub');
+        $this->assertSame('select * from `users` inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `sub` on true', $builder->toSql());
+
+        $sub1 = $this->getMySqlBuilder();
+        $sub1->getConnection()->shouldReceive('getDatabaseName');
+        $sub1 = $sub1->from('contacts')->whereColumn('contracts.user_id', 'users.id')->where('name', 'foo');
+
+        $sub2 = $this->getMySqlBuilder();
+        $sub2->getConnection()->shouldReceive('getDatabaseName');
+        $sub2 = $sub2->from('contacts')->whereColumn('contracts.user_id', 'users.id')->where('name', 'bar');
+
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral($sub1, 'sub1')->joinLateral($sub2, 'sub2');
+
+        $expected = 'select * from `users` ';
+        $expected .= 'inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id` and `name` = ?) as `sub1` on true ';
+        $expected .= 'inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id` and `name` = ?) as `sub2` on true';
+
+        $this->assertEquals($expected, $builder->toSql());
+        $this->assertEquals(['foo', 'bar'], $builder->getRawBindings()['join']);
+
+        $this->expectException(InvalidArgumentException::class);
+        $builder = $this->getMySqlBuilder();
+        $builder->from('users')->joinLateral(['foo'], 'sub');
+    }
+
+    public function testJoinLateralSQLite()
+    {
+        $this->expectException(RuntimeException::class);
+        $builder = $this->getSQLiteBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub')->toSql();
+    }
+
+    public function testJoinLateralPostgres()
+    {
+        $builder = $this->getPostgresBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub');
+        $this->assertSame('select * from "users" inner join lateral (select * from "contacts" where "contracts"."user_id" = "users"."id") as "sub" on true', $builder->toSql());
+    }
+
+    public function testJoinLateralSqlServer()
+    {
+        $builder = $this->getSqlServerBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->joinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub');
+        $this->assertSame('select * from [users] cross apply (select * from [contacts] where [contracts].[user_id] = [users].[id]) as [sub]', $builder->toSql());
+    }
+
+    public function testJoinLateralWithPrefix()
+    {
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->getGrammar()->setTablePrefix('prefix_');
+        $builder->from('users')->joinLateral('select * from `contacts` where `contracts`.`user_id` = `users`.`id`', 'sub');
+        $this->assertSame('select * from `prefix_users` inner join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `prefix_sub` on true', $builder->toSql());
+    }
+
+    public function testLeftJoinLateral()
+    {
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+
+        $sub = $this->getMySqlBuilder();
+        $sub->getConnection()->shouldReceive('getDatabaseName');
+
+        $builder->from('users')->leftJoinLateral($sub->from('contacts')->whereColumn('contracts.user_id', 'users.id'), 'sub');
+        $this->assertSame('select * from `users` left join lateral (select * from `contacts` where `contracts`.`user_id` = `users`.`id`) as `sub` on true', $builder->toSql());
+
+        $this->expectException(InvalidArgumentException::class);
+        $builder = $this->getBuilder();
+        $builder->from('users')->leftJoinLateral(['foo'], 'sub');
+    }
+
+    public function testLeftJoinLateralSqlServer()
+    {
+        $builder = $this->getSqlServerBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->from('users')->leftJoinLateral(function ($q) {
+            $q->from('contacts')->whereColumn('contracts.user_id', 'users.id');
+        }, 'sub');
+        $this->assertSame('select * from [users] outer apply (select * from [contacts] where [contracts].[user_id] = [users].[id]) as [sub]', $builder->toSql());
+    }
+
     public function testRawExpressionsInSelect()
     {
         $builder = $this->getBuilder();
@@ -2891,6 +3064,137 @@ class DatabaseQueryBuilderTest extends TestCase
         $this->expectExceptionMessage('does not support');
         $builder = $this->getSqlServerBuilder();
         $builder->from('users')->insertOrIgnore(['email' => 'foo']);
+    }
+
+    public function testInsertOrIgnoreUsingMethod()
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('does not support');
+        $builder = $this->getBuilder();
+        $builder->from('users')->insertOrIgnoreUsing(['email' => 'foo'], 'bar');
+    }
+
+    public function testSqlServerInsertOrIgnoreUsingMethod()
+    {
+        $this->expectException(RuntimeException::class);
+        $this->expectExceptionMessage('does not support');
+        $builder = $this->getSqlServerBuilder();
+        $builder->from('users')->insertOrIgnoreUsing(['email' => 'foo'], 'bar');
+    }
+
+    public function testMySqlInsertOrIgnoreUsingMethod()
+    {
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->getConnection()->shouldReceive('affectingStatement')->once()->with('insert ignore into `table1` (`foo`) select `bar` from `table2` where `foreign_id` = ?', [0 => 5])->andReturn(1);
+
+        $result = $builder->from('table1')->insertOrIgnoreUsing(
+            ['foo'],
+            function (Builder $query) {
+                $query->select(['bar'])->from('table2')->where('foreign_id', '=', 5);
+            }
+        );
+
+        $this->assertEquals(1, $result);
+    }
+
+    public function testMySqlInsertOrIgnoreUsingWithEmptyColumns()
+    {
+        $builder = $this->getMySqlBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->getConnection()->shouldReceive('affectingStatement')->once()->with('insert ignore into `table1` select * from `table2` where `foreign_id` = ?', [0 => 5])->andReturn(1);
+
+        $result = $builder->from('table1')->insertOrIgnoreUsing(
+            [],
+            function (Builder $query) {
+                $query->from('table2')->where('foreign_id', '=', 5);
+            }
+        );
+
+        $this->assertEquals(1, $result);
+    }
+
+    public function testMySqlInsertOrIgnoreUsingInvalidSubquery()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $builder = $this->getMySqlBuilder();
+        $builder->from('table1')->insertOrIgnoreUsing(['foo'], ['bar']);
+    }
+
+    public function testPostgresInsertOrIgnoreUsingMethod()
+    {
+        $builder = $this->getPostgresBuilder();
+        $builder->getConnection()->shouldReceive('affectingStatement')->once()->with('insert into "table1" ("foo") select "bar" from "table2" where "foreign_id" = ? on conflict do nothing', [5])->andReturn(1);
+
+        $result = $builder->from('table1')->insertOrIgnoreUsing(
+            ['foo'],
+            function (Builder $query) {
+                $query->select(['bar'])->from('table2')->where('foreign_id', '=', 5);
+            }
+        );
+
+        $this->assertEquals(1, $result);
+    }
+
+    public function testPostgresInsertOrIgnoreUsingWithEmptyColumns()
+    {
+        $builder = $this->getPostgresBuilder();
+        $builder->getConnection()->shouldReceive('affectingStatement')->once()->with('insert into "table1" select * from "table2" where "foreign_id" = ? on conflict do nothing', [5])->andReturn(1);
+
+        $result = $builder->from('table1')->insertOrIgnoreUsing(
+            [],
+            function (Builder $query) {
+                $query->from('table2')->where('foreign_id', '=', 5);
+            }
+        );
+
+        $this->assertEquals(1, $result);
+    }
+
+    public function testPostgresInsertOrIgnoreUsingInvalidSubquery()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $builder = $this->getPostgresBuilder();
+        $builder->from('table1')->insertOrIgnoreUsing(['foo'], ['bar']);
+    }
+
+    public function testSQLiteInsertOrIgnoreUsingMethod()
+    {
+        $builder = $this->getSQLiteBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->getConnection()->shouldReceive('affectingStatement')->once()->with('insert or ignore into "table1" ("foo") select "bar" from "table2" where "foreign_id" = ?', [5])->andReturn(1);
+
+        $result = $builder->from('table1')->insertOrIgnoreUsing(
+            ['foo'],
+            function (Builder $query) {
+                $query->select(['bar'])->from('table2')->where('foreign_id', '=', 5);
+            }
+        );
+
+        $this->assertEquals(1, $result);
+    }
+
+    public function testSQLiteInsertOrIgnoreUsingWithEmptyColumns()
+    {
+        $builder = $this->getSQLiteBuilder();
+        $builder->getConnection()->shouldReceive('getDatabaseName');
+        $builder->getConnection()->shouldReceive('affectingStatement')->once()->with('insert or ignore into "table1" select * from "table2" where "foreign_id" = ?', [5])->andReturn(1);
+
+        $result = $builder->from('table1')->insertOrIgnoreUsing(
+            [],
+            function (Builder $query) {
+                $query->from('table2')->where('foreign_id', '=', 5);
+            }
+        );
+
+        $this->assertEquals(1, $result);
+    }
+
+    public function testSQLiteInsertOrIgnoreUsingInvalidSubquery()
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $builder = $this->getSQLiteBuilder();
+        $builder->from('table1')->insertOrIgnoreUsing(['foo'], ['bar']);
     }
 
     public function testInsertGetIdMethod()
@@ -3347,6 +3651,23 @@ class DatabaseQueryBuilderTest extends TestCase
         $this->assertEquals([
             'delete from sqlite_sequence where name = ?' => ['users'],
             'delete from "users"' => [],
+        ], $sqlite->compileTruncate($builder));
+    }
+
+    public function testTruncateMethodWithPrefix()
+    {
+        $builder = $this->getBuilder();
+        $builder->getGrammar()->setTablePrefix('prefix_');
+        $builder->getConnection()->shouldReceive('statement')->once()->with('truncate table "prefix_users"', []);
+        $builder->from('users')->truncate();
+
+        $sqlite = new SQLiteGrammar;
+        $sqlite->setTablePrefix('prefix_');
+        $builder = $this->getBuilder();
+        $builder->from('users');
+        $this->assertEquals([
+            'delete from sqlite_sequence where name = ?' => ['prefix_users'],
+            'delete from "prefix_users"' => [],
         ], $sqlite->compileTruncate($builder));
     }
 
@@ -5192,10 +5513,15 @@ SQL;
 
     public function testWhereJsonContainsSqlite()
     {
-        $this->expectException(RuntimeException::class);
+        $builder = $this->getSQLiteBuilder();
+        $builder->select('*')->from('users')->whereJsonContains('options', 'en')->toSql();
+        $this->assertSame('select * from "users" where exists (select 1 from json_each("options") where "json_each"."value" is ?)', $builder->toSql());
+        $this->assertEquals(['en'], $builder->getBindings());
 
         $builder = $this->getSQLiteBuilder();
-        $builder->select('*')->from('users')->whereJsonContains('options->languages', ['en'])->toSql();
+        $builder->select('*')->from('users')->whereJsonContains('users.options->language', 'en')->toSql();
+        $this->assertSame('select * from "users" where exists (select 1 from json_each("users"."options", \'$."language"\') where "json_each"."value" is ?)', $builder->toSql());
+        $this->assertEquals(['en'], $builder->getBindings());
     }
 
     public function testWhereJsonContainsSqlServer()
@@ -5244,10 +5570,15 @@ SQL;
 
     public function testWhereJsonDoesntContainSqlite()
     {
-        $this->expectException(RuntimeException::class);
+        $builder = $this->getSQLiteBuilder();
+        $builder->select('*')->from('users')->whereJsonDoesntContain('options', 'en')->toSql();
+        $this->assertSame('select * from "users" where not exists (select 1 from json_each("options") where "json_each"."value" is ?)', $builder->toSql());
+        $this->assertEquals(['en'], $builder->getBindings());
 
         $builder = $this->getSQLiteBuilder();
-        $builder->select('*')->from('users')->whereJsonDoesntContain('options->languages', ['en'])->toSql();
+        $builder->select('*')->from('users')->whereJsonDoesntContain('users.options->language', 'en')->toSql();
+        $this->assertSame('select * from "users" where not exists (select 1 from json_each("users"."options", \'$."language"\') where "json_each"."value" is ?)', $builder->toSql());
+        $this->assertEquals(['en'], $builder->getBindings());
     }
 
     public function testWhereJsonDoesntContainSqlServer()

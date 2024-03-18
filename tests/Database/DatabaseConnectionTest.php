@@ -7,7 +7,6 @@ use ErrorException;
 use Exception;
 use Illuminate\Contracts\Events\Dispatcher;
 use Illuminate\Database\Connection;
-use Illuminate\Database\DatabaseTransactionsManager;
 use Illuminate\Database\Events\QueryExecuted;
 use Illuminate\Database\Events\TransactionBeginning;
 use Illuminate\Database\Events\TransactionCommitted;
@@ -117,11 +116,11 @@ class DatabaseConnectionTest extends TestCase
         $statement->expects($this->once())->method('bindValue')->with(1, 'foo', 2);
         $statement->expects($this->once())->method('execute');
         $statement->expects($this->atLeastOnce())->method('fetchAll')->willReturn(['boom']);
-        $statement->expects($this->atLeastOnce())->method('nextRowset')->will($this->returnCallback(function () {
+        $statement->expects($this->atLeastOnce())->method('nextRowset')->willReturnCallback(function () {
             static $i = 1;
 
             return ++$i <= 2;
-        }));
+        });
         $pdo->expects($this->once())->method('prepare')->with('CALL a_procedure(?)')->willReturn($statement);
         $mock = $this->getMockConnection(['prepareBindings'], $writePdo);
         $mock->setReadPdo($pdo);
@@ -288,20 +287,6 @@ class DatabaseConnectionTest extends TestCase
         $events->shouldReceive('dispatch')->once()->with(m::type(TransactionCommitting::class));
         $events->shouldReceive('dispatch')->once()->with(m::type(TransactionCommitted::class));
         $connection->commit();
-    }
-
-    public function testAfterCommitIsExecutedOnFinalCommit()
-    {
-        $pdo = $this->getMockBuilder(DatabaseConnectionTestMockPDO::class)->onlyMethods(['beginTransaction', 'commit'])->getMock();
-        $transactionsManager = $this->getMockBuilder(DatabaseTransactionsManager::class)->onlyMethods(['afterCommitCallbacksShouldBeExecuted'])->getMock();
-        $transactionsManager->expects($this->once())->method('afterCommitCallbacksShouldBeExecuted')->with(0)->willReturn(true);
-
-        $connection = $this->getMockConnection([], $pdo);
-        $connection->setTransactionManager($transactionsManager);
-
-        $connection->transaction(function () {
-            // do nothing
-        });
     }
 
     public function testRollBackedFiresEventsIfSet()
@@ -497,6 +482,18 @@ class DatabaseConnectionTest extends TestCase
             throw new Exception('The callback was fired');
         });
         $connection->select('foo bar', ['baz']);
+    }
+
+    public function testBeforeStartingTransactionHooksCanBeRegistered()
+    {
+        $this->expectException(Exception::class);
+        $this->expectExceptionMessage('The callback was fired');
+
+        $connection = $this->getMockConnection();
+        $connection->beforeStartingTransaction(function () {
+            throw new Exception('The callback was fired');
+        });
+        $connection->beginTransaction();
     }
 
     public function testPretendOnlyLogsQueries()
